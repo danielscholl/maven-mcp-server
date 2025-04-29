@@ -57,7 +57,7 @@ uv run maven-check --debug
 
 ## Tools
 
-This MCP server provides two tools:
+This MCP server provides three tools:
 
 ### 1. get_maven_latest_version
 
@@ -96,6 +96,34 @@ Checks if a specific version of a Maven dependency exists.
 ```
 
 **Returns:** A boolean indicating whether the version exists ("true" or "false")
+
+### 3. find_maven_latest_component_version
+
+Gets the latest version of a Maven dependency based on semantic versioning component (major, minor, or patch).
+
+**Parameters:**
+- `dependency` (required): The dependency in the format 'groupId:artifactId'
+- `version` (required): The version in semantic version format (MAJOR.MINOR.PATCH)
+- `target_component` (required): The component to find the latest version for, one of: "major", "minor", "patch"
+- `packaging` (optional): The packaging type, defaults to 'jar'
+- `classifier` (optional): The classifier, if any
+
+**Example:**
+```json
+{
+  "dependency": "org.apache.commons:commons-lang3",
+  "version": "3.12.0",
+  "target_component": "minor"
+}
+```
+
+**Returns:** The latest version as a string (e.g., "3.14.0")
+
+#### Behavior by Target Component
+
+- **major**: Returns the highest available major version (across all versions)
+- **minor**: Returns the highest minor version within the given major version
+- **patch**: Returns the highest patch version within the given major.minor version
 
 ## How It Works
 
@@ -137,4 +165,9 @@ Once the server is set up and Claude Code is connected, you can use the tools li
 2. **Check if a specific version exists**:
    ```
    Does version 3.14.0 of org.apache.commons:commons-lang3 exist?
+   ```
+
+3. 2. **Get latest**:
+   ```
+   I'm using version 2.0.2 of org.springdoc:springdoc-openapi-starter-webmvc-ui what is the latest patch?
    ```

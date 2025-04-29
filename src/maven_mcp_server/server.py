@@ -14,6 +14,7 @@ from mcp.types import Tool, TextContent
 
 from maven_mcp_server.tools.version_exist import get_maven_latest_version
 from maven_mcp_server.tools.check_version import check_maven_version_exists
+from maven_mcp_server.tools.latest_by_semver import find_maven_latest_component_version
 from maven_mcp_server.shared.data_types import ErrorCode, MavenError, create_error_response
 
 
@@ -87,6 +88,39 @@ async def serve_async() -> None:
                     },
                     "required": ["dependency", "version"]
                 }
+            ),
+            Tool(
+                name="find_maven_latest_component_version",
+                description="Find the latest version of a Maven dependency based on semantic versioning component",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "dependency": {
+                            "type": "string",
+                            "description": "The dependency in the format 'groupId:artifactId'."
+                        },
+                        "version": {
+                            "type": "string",
+                            "description": "The version in semantic version format (MAJOR.MINOR.PATCH)."
+                        },
+                        "target_component": {
+                            "type": "string",
+                            "description": "The component to find the latest version for (major, minor, or patch).",
+                            "enum": ["major", "minor", "patch"]
+                        },
+                        "packaging": {
+                            "type": "string",
+                            "description": "The packaging type, defaults to 'jar'.",
+                            "default": "jar"
+                        },
+                        "classifier": {
+                            "type": ["string", "null"],
+                            "description": "The classifier, if any.",
+                            "default": None
+                        }
+                    },
+                    "required": ["dependency", "version", "target_component"]
+                }
             )
         ]
     
@@ -131,6 +165,26 @@ async def serve_async() -> None:
                 else:
                     error_msg = result.get("error", {}).get("message", "Unknown error")
                     logger.error(f"Error in check_maven_version_exists: {error_msg}")
+                    
+                    # Return error as TextContent instead of raising exception
+                    return [TextContent(
+                        type="text",
+                        text=f"Error: {error_msg}"
+                    )]
+            elif name == "find_maven_latest_component_version":
+                result = find_maven_latest_component_version(**arguments)
+                if result.get("status") == "success":
+                    latest_version = result.get("result", {}).get("latest_version")
+                    logger.info(f"Latest component version found: {latest_version}")
+                    
+                    # Format as expected by MCP server - return TextContent
+                    return [TextContent(
+                        type="text",
+                        text=latest_version
+                    )]
+                else:
+                    error_msg = result.get("error", {}).get("message", "Unknown error")
+                    logger.error(f"Error in find_maven_latest_component_version: {error_msg}")
                     
                     # Return error as TextContent instead of raising exception
                     return [TextContent(
