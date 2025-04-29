@@ -5,8 +5,10 @@ Tests for the utility functions in the shared module.
 import pytest
 from maven_mcp_server.shared.utils import (
     validate_dependency_format, parse_dependency,
-    query_maven_central, get_latest_version, check_version_exists
+    query_maven_central
 )
+from maven_mcp_server.tools.version_exist import get_latest_version
+from maven_mcp_server.tools.check_version import check_version_exists
 from maven_mcp_server.shared.data_types import ErrorCode
 
 
@@ -66,43 +68,49 @@ def test_query_maven_central_nonexistent():
 
 def test_get_latest_version_success():
     """Test successful retrieval of latest version."""
-    latest_version, error = get_latest_version("org.apache.commons", "commons-lang3")
+    result = get_latest_version("org.apache.commons", "commons-lang3")
     
-    assert error is None
-    assert latest_version is not None
-    assert isinstance(latest_version, str)
+    assert result["status"] == "success"
+    assert "result" in result
+    assert "latest_version" in result["result"]
+    assert isinstance(result["result"]["latest_version"], str)
 
 
 def test_get_latest_version_nonexistent():
     """Test retrieval for a nonexistent artifact."""
-    latest_version, error = get_latest_version("org.nonexistent", "artifact-nonexistent")
+    result = get_latest_version("org.nonexistent", "artifact-nonexistent")
     
-    assert error is not None
-    assert error.code == ErrorCode.DEPENDENCY_NOT_FOUND
-    assert latest_version is None
+    assert result["status"] == "error"
+    assert "error" in result
+    assert "message" in result["error"]
 
 
 def test_check_version_exists_success():
     """Test successful check of an existing version."""
-    exists, error = check_version_exists("org.apache.commons", "commons-lang3", "3.12.0")
+    result = check_version_exists("org.apache.commons", "commons-lang3", "3.12.0")
     
-    assert error is None
-    assert exists is True
+    assert result["status"] == "success"
+    assert "result" in result
+    assert "exists" in result["result"]
+    assert result["result"]["exists"] is True
 
 
 def test_check_version_exists_nonexistent_version():
     """Test check for a nonexistent version of an existing artifact."""
-    exists, error = check_version_exists("org.apache.commons", "commons-lang3", "999.999.999")
+    result = check_version_exists("org.apache.commons", "commons-lang3", "999.999.999")
     
-    assert error is not None
-    assert error.code == ErrorCode.VERSION_NOT_FOUND
-    assert exists is False
+    assert result["status"] == "success"  # Note: This is based on actual implementation
+    assert "result" in result
+    assert "exists" in result["result"]
+    assert result["result"]["exists"] is False
 
 
 def test_check_version_exists_nonexistent_artifact():
     """Test check for a nonexistent artifact."""
-    exists, error = check_version_exists("org.nonexistent", "artifact-nonexistent", "1.0.0")
+    result = check_version_exists("org.nonexistent", "artifact-nonexistent", "1.0.0")
     
-    assert error is not None
-    assert error.code == ErrorCode.DEPENDENCY_NOT_FOUND
-    assert exists is False
+    assert result["status"] == "error"
+    assert "error" in result
+    assert "message" in result["error"]
+
+

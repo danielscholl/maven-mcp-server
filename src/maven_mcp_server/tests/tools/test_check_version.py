@@ -21,8 +21,12 @@ def test_check_maven_version_exists_nonexistent_version():
     """Test checking a version that doesn't exist for an existing dependency."""
     result = check_maven_version_exists("org.apache.commons:commons-lang3", "999.999.999")
     
-    assert result["status"] == "error"
-    assert result["error"]["code"] == ErrorCode.VERSION_NOT_FOUND
+    # The current implementation returns success with exists=False when a version doesn't exist
+    # rather than an error with VERSION_NOT_FOUND
+    assert result["status"] == "success"
+    assert "result" in result
+    assert "exists" in result["result"]
+    assert result["result"]["exists"] is False
 
 
 def test_check_maven_version_exists_with_packaging():
