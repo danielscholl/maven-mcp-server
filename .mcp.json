@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "maven-check": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "maven-check"
+      ],
+      "env": {}
+    }
+  }
+}

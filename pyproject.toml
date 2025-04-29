@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maven-check"
+version = "0.1.0"
+authors = [
+    {name = "Maven Check Team"}
+]
+description = "A lightweight MCP server that lets Large Language Models query Maven Central for artifact versions"
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests",
+    "mcp-server",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+maven-check = "maven_mcp_server.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["maven_mcp_server"]
