@@ -21,14 +21,19 @@ dependencies = [
     "mcp-server",
 ]
 
+[project.scripts]
+maven-check = "maven_mcp_server.main:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest",
 ]
 
-[project.scripts]
-maven-check = "maven_mcp_server.main:main"
+
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["maven_mcp_server"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["maven_mcp_server*"]
