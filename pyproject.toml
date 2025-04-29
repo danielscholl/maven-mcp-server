@@ -10,7 +10,7 @@ authors = [
 ]
 description = "A lightweight MCP server that lets Large Language Models query Maven Central for artifact versions"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
