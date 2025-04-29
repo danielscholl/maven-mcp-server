@@ -39,7 +39,7 @@ To use this MCP server with your projects, add the following to your `.mcp.json`
 }
 ```
 
-[![Install with UVX in VS Code](https://img.shields.io/badge/VS_Code-UVX-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=mcp/install?%7B%22name%22%3A%22maven-check%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22git%2Bhttps%3A%2F%2Fgithub.com%2Fdanielscholl%2Fmaven-mcp-server%40main%22%2C%22maven-check%22%5D%2C%22env%22%3A%7B%7D%7D)
+[![Install with UVX in VS Code](https://img.shields.io/badge/VS_Code-UVX-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode:mcp/install?%7B%22name%22%3A%22maven-check%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22git%2Bhttps%3A%2F%2Fgithub.com%2Fdanielscholl%2Fmaven-mcp-server%40main%22%2C%22maven-check%22%5D%2C%22env%22%3A%7B%7D%7D)
 
 ## Usage
 
