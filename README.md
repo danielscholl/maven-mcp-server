@@ -241,6 +241,6 @@ Once the server is set up and Claude Code is connected, you can use the tools li
    ```
    I'm using version 3.1.0 of org.springframework.boot:spring-boot-dependencies.
    I'm also using org.json:json with the version 20231013.
-   What versions could I upgrade to?
+   What are the lastest versions could I upgrade to?
    ```
    This returns the latest major, minor, and patch versions in a single call, making it efficient for understanding upgrade options.

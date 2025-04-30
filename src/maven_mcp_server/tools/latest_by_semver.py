@@ -54,11 +54,16 @@ def parse_semver(version: str) -> Tuple[bool, Optional[Tuple[int, int, int]], Op
         # For calendar versions, use year as major, month as minor, day as patch
         if len(version) >= 8:
             try:
-                major = int(version[:4])    # Year (e.g., 2023)
-                minor = int(version[4:6])   # Month (e.g., 10)
-                patch = int(version[6:8])   # Day (e.g., 13)
-                logger.info(f"Parsed calendar version {version} as {major}.{minor}.{patch}")
-                return True, (major, minor, patch), None
+                year = int(version[:4])
+                month = int(version[4:6])
+                day = int(version[6:8])
+                # Validate that it looks like a real date
+                if 1900 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31:
+                    # Store the entire numeric value as major to ensure proper comparisons
+                    numeric_value = int(version[:8])
+                    # Return the date components, marking it as a date-based version
+                    logger.info(f"Parsed calendar version {version} as {year}.{month}.{day} (date-based)")
+                    return True, (year, month, day), None
             except Exception:
                 pass
         # For other numeric versions, use the number as major, 0 for minor and patch
@@ -181,6 +186,7 @@ def get_latest_component_version(
         
         # Extract and parse all versions
         versions = []
+        date_based_versions = []  # Special handling for date-based versions
         for doc in docs:
             version_str = doc.get("v")
             if not version_str:
@@ -208,11 +214,17 @@ def get_latest_component_version(
             # Try calendar format (YYYYMMDD)
             if version_str.isdigit() and len(version_str) >= 8:
                 try:
-                    v_major = int(version_str[:4])   # Year
-                    v_minor = int(version_str[4:6])  # Month
-                    v_patch = int(version_str[6:8])  # Day
-                    versions.append((v_major, v_minor, v_patch, version_str))
-                    continue  # Successfully parsed, move to next version
+                    # Store date-based versions separately for special handling
+                    year = int(version_str[:4])   # Year
+                    month = int(version_str[4:6])  # Month
+                    day = int(version_str[6:8])  # Day
+                    # Verify this actually looks like a date
+                    if 1900 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31:
+                        # For date-based versions, we'll use a large integer representing YYYYMMDD
+                        # This ensures proper sorting
+                        numeric_value = int(version_str[:8])
+                        date_based_versions.append((numeric_value, 0, 0, version_str))
+                        continue  # Successfully parsed, move to next version
                 except ValueError:
                     pass  # Continue to next parsing attempt
             
@@ -243,7 +255,8 @@ def get_latest_component_version(
                 except ValueError:
                     pass  # Skip this version
         
-        if not versions:
+        # Combine regular versions and date-based versions
+        if not versions and not date_based_versions:
             return {
                 "status": "error",
                 "error": {
@@ -251,8 +264,31 @@ def get_latest_component_version(
                 }
             }
         
-        # Filter versions based on the target component
+        # Determine if input version is likely a date-based version
         major, minor, patch = version_tuple
+        is_input_date_based = False
+        if isinstance(major, int) and 1900 <= major <= 2100:
+            # Check if input looks like a year
+            is_input_date_based = True
+            logger.info(f"Detected input version {version_tuple} as date-based")
+            
+        # Handle date-based versions specifically for calendar versioning
+        if is_input_date_based and date_based_versions:
+            logger.info(f"Processing {len(date_based_versions)} date-based versions for a date-based input")
+            # Sort by numeric value (YYYYMMDD) in descending order
+            sorted_date_versions = sorted(date_based_versions, key=lambda x: x[0], reverse=True)
+            
+            # For date-based versions, we always return the latest date
+            # regardless of the target component since dates don't have semantic meaning like semver
+            return {
+                "status": "success",
+                "result": {
+                    "latest_version": sorted_date_versions[0][3]
+                }
+            }
+            
+        # Process regular versions - standard approach
+        # Filter versions based on the target component
         filtered_versions = []
         
         if target_component == "major":
@@ -279,12 +315,22 @@ def get_latest_component_version(
                     filtered_versions = versions
         
         if not filtered_versions:
-            return {
-                "status": "error",
-                "error": {
-                    "message": f"No versions matching the criteria found for {group_id}:{artifact_id} with {target_component}={version_tuple}"
+            # If no semver versions match but we have date-based versions, use those
+            if date_based_versions:
+                sorted_date_versions = sorted(date_based_versions, key=lambda x: x[0], reverse=True)
+                return {
+                    "status": "success",
+                    "result": {
+                        "latest_version": sorted_date_versions[0][3]
+                    }
                 }
-            }
+            else:
+                return {
+                    "status": "error",
+                    "error": {
+                        "message": f"No versions matching the criteria found for {group_id}:{artifact_id} with {target_component}={version_tuple}"
+                    }
+                }
         
         # Sort filtered versions to find the latest
         if target_component == "major":

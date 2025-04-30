@@ -69,6 +69,7 @@ def get_all_latest_versions(
         
         # Extract and parse all versions
         versions = []
+        date_based_versions = []  # Special handling for date-based versions
         for doc in docs:
             version_str = doc.get("v")
             if not version_str:
@@ -96,11 +97,17 @@ def get_all_latest_versions(
             # Try calendar format (YYYYMMDD)
             if version_str.isdigit() and len(version_str) >= 8:
                 try:
-                    v_major = int(version_str[:4])   # Year
-                    v_minor = int(version_str[4:6])  # Month
-                    v_patch = int(version_str[6:8])  # Day
-                    versions.append((v_major, v_minor, v_patch, version_str))
-                    continue  # Successfully parsed, move to next version
+                    # Store date-based versions separately for special handling
+                    year = int(version_str[:4])   # Year
+                    month = int(version_str[4:6])  # Month
+                    day = int(version_str[6:8])  # Day
+                    # Verify this actually looks like a date
+                    if 1900 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31:
+                        # For date-based versions, we'll use a large integer representing YYYYMMDD
+                        # This ensures proper sorting
+                        numeric_value = int(version_str[:8])
+                        date_based_versions.append((numeric_value, 0, 0, version_str))
+                        continue  # Successfully parsed, move to next version
                 except ValueError:
                     pass  # Continue to next parsing attempt
             
@@ -131,7 +138,8 @@ def get_all_latest_versions(
                 except ValueError:
                     pass  # Skip this version
         
-        if not versions:
+        # Combine regular versions and date-based versions
+        if not versions and not date_based_versions:
             return {
                 "status": "error",
                 "error": {
@@ -141,33 +149,80 @@ def get_all_latest_versions(
         
         input_major, input_minor, input_patch = version_tuple
         
-        # For latest major version - get the highest across all versions
-        all_versions = sorted(versions, reverse=True)
-        latest_major_version = all_versions[0][3]
-        
-        # For non-semver versions like calendar dates, we may not have multiple major/minor versions
-        # So we'll adjust our filtering logic to be more permissive
-        
-        # For latest minor version - get the highest minor within the input major version if possible
-        minor_versions = [v for v in versions if v[0] == input_major]
+        # Determine if input version is likely a date-based version
+        is_input_date_based = False
+        if isinstance(input_major, int) and 1900 <= input_major <= 2100:
+            # Check if input looks like a year
+            is_input_date_based = True
+            logger.info(f"Detected input version {version_tuple} as date-based")
+            
+        latest_major_version = None
         latest_minor_version = None
-        if minor_versions:
-            minor_versions.sort(key=lambda x: (x[1], x[2]), reverse=True)
-            latest_minor_version = minor_versions[0][3]
-        else:
-            # If no versions with the same major version, use the overall latest version
-            latest_minor_version = latest_major_version
-        
-        # For latest patch version - get the highest patch within the input major.minor version if possible
-        patch_versions = [v for v in versions if v[0] == input_major and v[1] == input_minor]
         latest_patch_version = None
-        if patch_versions:
-            patch_versions.sort(key=lambda x: x[2], reverse=True)
-            latest_patch_version = patch_versions[0][3]
-        else:
-            # If no versions with the same major.minor version, try to use the minor version
-            # or fall back to the major version
-            latest_patch_version = latest_minor_version
+        
+        # Handle date-based versions if we found any
+        if date_based_versions:
+            logger.info(f"Processing {len(date_based_versions)} date-based versions")
+            # Sort by numeric value (which represents YYYYMMDD) in descending order
+            # This ensures the most recent date is first
+            sorted_date_versions = sorted(date_based_versions, key=lambda x: x[0], reverse=True)
+            
+            # Log all date-based versions to help debug
+            for idx, version in enumerate(sorted_date_versions):
+                logger.info(f"Date version {idx}: {version[3]} (numeric: {version[0]})")
+            
+            # The latest date-based version
+            latest_date_version = sorted_date_versions[0][3]
+            
+            # For date-based versions, the latest is always the most recent date
+            latest_major_version = latest_date_version
+            latest_minor_version = latest_date_version 
+            latest_patch_version = latest_date_version
+            
+            logger.info(f"Latest date-based version: {latest_date_version}")
+        
+        # Process regular semver versions if we found any
+        if versions:
+            # For latest major version - get the highest across all versions
+            all_versions = sorted(versions, reverse=True)
+            semver_latest_major_version = all_versions[0][3]
+            
+            # For latest minor version - get the highest minor within the input major version if possible
+            minor_versions = [v for v in versions if v[0] == input_major]
+            semver_latest_minor_version = None
+            if minor_versions:
+                minor_versions.sort(key=lambda x: (x[1], x[2]), reverse=True)
+                semver_latest_minor_version = minor_versions[0][3]
+            else:
+                # If no versions with the same major version, use the overall latest version
+                semver_latest_minor_version = semver_latest_major_version
+            
+            # For latest patch version - get the highest patch within the input major.minor version if possible
+            patch_versions = [v for v in versions if v[0] == input_major and v[1] == input_minor]
+            semver_latest_patch_version = None
+            if patch_versions:
+                patch_versions.sort(key=lambda x: x[2], reverse=True)
+                semver_latest_patch_version = patch_versions[0][3]
+            else:
+                # If no versions with the same major.minor version, try to use the minor version
+                # or fall back to the major version
+                semver_latest_patch_version = semver_latest_minor_version
+            
+            # If we haven't set the versions from date-based processing,
+            # or if the input isn't date-based, use the semver results
+            if latest_major_version is None or not is_input_date_based:
+                latest_major_version = semver_latest_major_version
+                latest_minor_version = semver_latest_minor_version 
+                latest_patch_version = semver_latest_patch_version
+        
+        # If we have both date-based and regular versions, choose the right ones based on input type
+        if versions and date_based_versions:
+            if is_input_date_based:
+                # Input is date-based, so prefer date-based results
+                latest_major_version = date_based_versions[0][3]
+                latest_minor_version = date_based_versions[0][3]
+                latest_patch_version = date_based_versions[0][3]
+            # Otherwise, we've already set the semver-based results
         
         # For consistency, always return all three components with the best values we could find
         
@@ -225,16 +280,6 @@ def get_maven_all_latest_versions(
         logger.error(f"Invalid dependency format: {error.message if error else 'Unknown error'}")
         return create_error_response(tool_name, error)
     
-    # Parse the version - now handles non-semver formats
-    is_valid, version_tuple, error = parse_semver(version)
-    if not is_valid:
-        logger.warning(f"Could not parse version '{version}' in any recognized format: {error.message}")
-        # Instead of returning an error, we'll continue with a default version tuple
-        # This allows us to at least return the latest version even if we can't do component-based comparisons
-        version_tuple = (0, 0, 0)  # Default to all zeros
-    else:
-        logger.info(f"Parsed version '{version}' as tuple {version_tuple}")
-    
     # Parse the dependency
     group_id, artifact_id = parse_dependency(dependency)
     logger.info(f"Parsed dependency: group_id={group_id}, artifact_id={artifact_id}")
@@ -245,7 +290,33 @@ def get_maven_all_latest_versions(
         actual_packaging = "pom"
     logger.info(f"Using packaging type: {actual_packaging}")
     
-    # Get all the latest versions
+    # Check if version is in semver format
+    is_semver, version_tuple, error = parse_semver(version)
+    
+    # For non-semver version formats, use get_latest_version for all components
+    if not is_semver:
+        logger.info(f"Version '{version}' is not in semver format. Using get_latest_version for all components.")
+        # Import here to avoid circular imports
+        from maven_mcp_server.tools.version_exist import get_latest_version
+        
+        latest_result = get_latest_version(group_id, artifact_id, actual_packaging, classifier)
+        if latest_result.get("status") == "success":
+            latest_version = latest_result.get("result", {}).get("latest_version")
+            logger.info(f"Latest version found: {latest_version}")
+            return create_success_response(tool_name, {
+                "latest_major_version": latest_version,
+                "latest_minor_version": latest_version,
+                "latest_patch_version": latest_version
+            })
+        else:
+            error_msg = latest_result.get("error", {}).get("message", "Unknown error")
+            logger.error(f"Error getting latest version: {error_msg}")
+            return create_error_response(tool_name, MavenError(ErrorCode.INTERNAL_SERVER_ERROR, error_msg))
+    
+    # For semver versions, use the semantic versioning component logic
+    logger.info(f"Version '{version}' is in semver format: {version_tuple}")
+    
+    # Get all the latest versions using semver logic
     result = get_all_latest_versions(
         group_id, artifact_id, version_tuple, actual_packaging, classifier
     )
