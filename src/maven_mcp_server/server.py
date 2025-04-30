@@ -15,6 +15,7 @@ from mcp.types import Tool, TextContent
 from maven_mcp_server.tools.version_exist import get_maven_latest_version
 from maven_mcp_server.tools.check_version import check_maven_version_exists
 from maven_mcp_server.tools.latest_by_semver import find_maven_latest_component_version
+from maven_mcp_server.tools.all_latest_versions import get_maven_all_latest_versions
 from maven_mcp_server.shared.data_types import ErrorCode, MavenError, create_error_response
 
 
@@ -121,6 +122,34 @@ async def serve_async() -> None:
                     },
                     "required": ["dependency", "version", "target_component"]
                 }
+            ),
+            Tool(
+                name="get_maven_all_latest_versions",
+                description="Get latest versions for all semantic versioning components (major, minor, patch) in a single call",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "dependency": {
+                            "type": "string",
+                            "description": "The dependency in the format 'groupId:artifactId'."
+                        },
+                        "version": {
+                            "type": "string",
+                            "description": "The version in semantic version format (MAJOR.MINOR.PATCH)."
+                        },
+                        "packaging": {
+                            "type": "string",
+                            "description": "The packaging type, defaults to 'jar'.",
+                            "default": "jar"
+                        },
+                        "classifier": {
+                            "type": ["string", "null"],
+                            "description": "The classifier, if any.",
+                            "default": None
+                        }
+                    },
+                    "required": ["dependency", "version"]
+                }
             )
         ]
     
@@ -185,6 +214,37 @@ async def serve_async() -> None:
                 else:
                     error_msg = result.get("error", {}).get("message", "Unknown error")
                     logger.error(f"Error in find_maven_latest_component_version: {error_msg}")
+                    
+                    # Return error as TextContent instead of raising exception
+                    return [TextContent(
+                        type="text",
+                        text=f"Error: {error_msg}"
+                    )]
+            elif name == "get_maven_all_latest_versions":
+                result = get_maven_all_latest_versions(**arguments)
+                if result.get("status") == "success":
+                    latest_versions = result.get("result", {})
+                    logger.info(f"All latest versions found: {latest_versions}")
+                    
+                    # Format response to include all component versions in a structured format
+                    major_version = latest_versions.get("latest_major_version", "N/A")
+                    minor_version = latest_versions.get("latest_minor_version", "N/A")
+                    patch_version = latest_versions.get("latest_patch_version", "N/A")
+                    
+                    formatted_response = f"""{{
+  "latest_major_version": "{major_version}",
+  "latest_minor_version": "{minor_version}",
+  "latest_patch_version": "{patch_version}"
+}}"""
+                    
+                    # Format as expected by MCP server - return TextContent
+                    return [TextContent(
+                        type="text",
+                        text=formatted_response
+                    )]
+                else:
+                    error_msg = result.get("error", {}).get("message", "Unknown error")
+                    logger.error(f"Error in get_maven_all_latest_versions: {error_msg}")
                     
                     # Return error as TextContent instead of raising exception
                     return [TextContent(

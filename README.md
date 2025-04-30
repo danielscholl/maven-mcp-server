@@ -58,7 +58,7 @@ uv run maven-check --debug
 
 ## Tools
 
-This MCP server provides three tools:
+This MCP server provides four tools:
 
 ### 1. get_maven_latest_version
 
@@ -147,6 +147,40 @@ Gets the latest version of a Maven dependency based on semantic versioning compo
 - **minor**: Returns the highest minor version within the given major version
 - **patch**: Returns the highest patch version within the given major.minor version
 
+### 4. get_maven_all_latest_versions
+
+Gets the latest versions for all semantic versioning components (major, minor, patch) in a single call.
+
+**Parameters:**
+- `dependency` (required): The dependency in the format 'groupId:artifactId'
+- `version` (required): The version in semantic version format (MAJOR.MINOR.PATCH)
+- `packaging` (optional): The packaging type, defaults to 'jar' (automatically uses 'pom' for dependencies with -bom or -dependencies suffix)
+- `classifier` (optional): The classifier, if any
+
+**Examples:**
+```json
+{
+  "dependency": "org.apache.commons:commons-lang3",
+  "version": "3.12.0"
+}
+```
+
+```json
+{
+  "dependency": "org.springframework.boot:spring-boot-dependencies",
+  "version": "3.1.0"
+}
+```
+
+**Returns:** A JSON object containing the latest versions for each component:
+```json
+{
+  "latest_major_version": "3.14.0",
+  "latest_minor_version": "3.12.0",
+  "latest_patch_version": "3.12.0"
+}
+```
+
 ## How It Works
 
 The server works by:
@@ -202,3 +236,9 @@ Once the server is set up and Claude Code is connected, you can use the tools li
    What is the latest version of org.springframework.boot:spring-boot-dependencies?
    ```
    The server automatically detects dependencies with "-dependencies" or "-bom" suffix and uses POM packaging type.
+
+5. **Get all latest versions in one call**:
+   ```
+   I'm using version 3.1.0 of org.springframework.boot:spring-boot-dependencies, what versions could I upgrade to?
+   ```
+   This returns the latest major, minor, and patch versions in a single call, making it efficient for understanding upgrade options.
