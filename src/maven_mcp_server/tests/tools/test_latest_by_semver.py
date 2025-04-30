@@ -16,14 +16,14 @@ def test_parse_semver_valid():
     assert error is None
 
 
-def test_parse_semver_invalid():
-    """Test parsing of an invalid semantic version."""
+def test_parse_semver_partial():
+    """Test parsing of a partial version like '1.2'."""
     is_valid, version_tuple, error = parse_semver("1.2")
     
-    assert is_valid is False
-    assert version_tuple is None
-    assert error is not None
-    assert error.code == ErrorCode.INVALID_INPUT_FORMAT
+    # With our enhanced version parsing, this should now be valid
+    assert is_valid is True
+    assert version_tuple == (1, 2, 0)  # Should handle this as major=1, minor=2, patch=0
+    assert error is None
 
 
 def test_parse_semver_empty():
@@ -128,15 +128,17 @@ def test_find_maven_latest_component_version_nonexistent_dependency():
     assert result["error"]["code"] == ErrorCode.DEPENDENCY_NOT_FOUND
 
 
-def test_find_maven_latest_component_version_nonexistent_version():
-    """Test with a version that doesn't exist for the dependency."""
+def test_find_maven_latest_component_version_high_version():
+    """Test with a very high version number that doesn't exist yet."""
     # Use an extremely high version number that doesn't exist yet
+    # With our enhanced version parsing, this will still work but return the best available version
     result = find_maven_latest_component_version(
         "org.apache.commons:commons-lang3", "999.0.0", "minor"
     )
     
-    assert result["status"] == "error"
-    assert result["error"]["code"] == ErrorCode.VERSION_NOT_FOUND
+    # With our new implementation, we no longer error out but return the best available version
+    assert result["status"] == "success"
+    assert "latest_version" in result["result"]
 
 
 def test_find_maven_latest_component_version_invalid_format():
@@ -159,11 +161,24 @@ def test_find_maven_latest_component_version_invalid_target():
     assert result["error"]["code"] == ErrorCode.INVALID_INPUT_FORMAT
 
 
-def test_find_maven_latest_component_version_invalid_version():
-    """Test with an invalid semantic version."""
+def test_find_maven_latest_component_version_numeric_version():
+    """Test with a simple numeric version like '3'."""
     result = find_maven_latest_component_version(
         "org.apache.commons:commons-lang3", "3", "major"
     )
     
-    assert result["status"] == "error"
-    assert result["error"]["code"] == ErrorCode.INVALID_INPUT_FORMAT
+    # With our enhanced version parsing, this should now work
+    assert result["status"] == "success"
+    assert "latest_version" in result["result"]
+
+
+def test_find_maven_latest_component_version_calendar_format():
+    """Test with a calendar format version (YYYYMMDD)."""
+    result = find_maven_latest_component_version(
+        "org.json:json", "20231013", "major"
+    )
+    
+    assert result["status"] == "success"
+    assert "latest_version" in result["result"]
+    
+    # We expect it to work with the common calendar version format

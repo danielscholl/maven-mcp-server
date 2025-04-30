@@ -79,7 +79,9 @@ def get_all_latest_versions(
             if "-" in version_str and any(x in version_str.lower() for x in ["alpha", "beta", "rc", "snapshot", "pre"]):
                 continue
                 
-            # Try to parse the version as semver
+            # Try to parse the version in various formats
+            
+            # First try standard semver format
             match = re.match(r'^(\d+)\.(\d+)\.(\d+)', version_str)
             if match:
                 try:
@@ -87,15 +89,53 @@ def get_all_latest_versions(
                     v_minor = int(match.group(2))
                     v_patch = int(match.group(3))
                     versions.append((v_major, v_minor, v_patch, version_str))
+                    continue  # Successfully parsed, move to next version
                 except ValueError:
-                    # Skip versions that can't be properly parsed
-                    continue
+                    pass  # Continue to next parsing attempt
+            
+            # Try calendar format (YYYYMMDD)
+            if version_str.isdigit() and len(version_str) >= 8:
+                try:
+                    v_major = int(version_str[:4])   # Year
+                    v_minor = int(version_str[4:6])  # Month
+                    v_patch = int(version_str[6:8])  # Day
+                    versions.append((v_major, v_minor, v_patch, version_str))
+                    continue  # Successfully parsed, move to next version
+                except ValueError:
+                    pass  # Continue to next parsing attempt
+            
+            # Try simple numeric format (treat as major version)
+            if version_str.isdigit():
+                try:
+                    v_major = int(version_str)
+                    versions.append((v_major, 0, 0, version_str))
+                    continue  # Successfully parsed, move to next version
+                except ValueError:
+                    pass  # Continue to next parsing attempt
+            
+            # Try partial semver (like "1.0" or just "1")
+            parts = version_str.split('.')
+            if parts:
+                try:
+                    # Start with zeros
+                    v_major = v_minor = v_patch = 0
+                    # Fill in with actual values where available
+                    if len(parts) > 0:
+                        v_major = int(parts[0])
+                    if len(parts) > 1:
+                        v_minor = int(parts[1])
+                    if len(parts) > 2:
+                        v_patch = int(parts[2])
+                    versions.append((v_major, v_minor, v_patch, version_str))
+                    continue  # Successfully parsed, move to next version
+                except ValueError:
+                    pass  # Skip this version
         
         if not versions:
             return {
                 "status": "error",
                 "error": {
-                    "message": f"No valid semantic versions found for {group_id}:{artifact_id} in Maven Central"
+                    "message": f"No valid versions found for {group_id}:{artifact_id} in Maven Central"
                 }
             }
         
@@ -105,28 +145,31 @@ def get_all_latest_versions(
         all_versions = sorted(versions, reverse=True)
         latest_major_version = all_versions[0][3]
         
-        # For latest minor version - get the highest minor within the input major version
+        # For non-semver versions like calendar dates, we may not have multiple major/minor versions
+        # So we'll adjust our filtering logic to be more permissive
+        
+        # For latest minor version - get the highest minor within the input major version if possible
         minor_versions = [v for v in versions if v[0] == input_major]
         latest_minor_version = None
         if minor_versions:
             minor_versions.sort(key=lambda x: (x[1], x[2]), reverse=True)
             latest_minor_version = minor_versions[0][3]
+        else:
+            # If no versions with the same major version, use the overall latest version
+            latest_minor_version = latest_major_version
         
-        # For latest patch version - get the highest patch within the input major.minor version
+        # For latest patch version - get the highest patch within the input major.minor version if possible
         patch_versions = [v for v in versions if v[0] == input_major and v[1] == input_minor]
         latest_patch_version = None
         if patch_versions:
             patch_versions.sort(key=lambda x: x[2], reverse=True)
             latest_patch_version = patch_versions[0][3]
+        else:
+            # If no versions with the same major.minor version, try to use the minor version
+            # or fall back to the major version
+            latest_patch_version = latest_minor_version
         
-        # Check if we have at least one component version
-        if not latest_minor_version and not latest_patch_version:
-            return {
-                "status": "error",
-                "error": {
-                    "message": f"No versions matching the criteria found for {group_id}:{artifact_id} with version={version_tuple}"
-                }
-            }
+        # For consistency, always return all three components with the best values we could find
         
         # Return all available component versions
         result = {
@@ -160,10 +203,12 @@ def get_maven_all_latest_versions(
 ) -> Dict[str, Any]:
     """
     Find the latest versions for all semantic versioning components (major, minor, patch) in a single call.
+    Supports both standard semver (MAJOR.MINOR.PATCH) and non-semver formats (like calendar dates 20231013).
     
     Args:
         dependency: The dependency in the format 'groupId:artifactId'.
-        version: The version in semantic version format (MAJOR.MINOR.PATCH).
+        version: The version string. Preferably in semantic version format (MAJOR.MINOR.PATCH),
+                but other formats like dates (20231013) are also supported.
         packaging: The packaging type, defaults to 'jar'.
         classifier: The classifier, if any.
         
@@ -180,11 +225,15 @@ def get_maven_all_latest_versions(
         logger.error(f"Invalid dependency format: {error.message if error else 'Unknown error'}")
         return create_error_response(tool_name, error)
     
-    # Parse the version
+    # Parse the version - now handles non-semver formats
     is_valid, version_tuple, error = parse_semver(version)
     if not is_valid:
-        logger.error(f"Invalid semantic version: {error.message if error else 'Unknown error'}")
-        return create_error_response(tool_name, error)
+        logger.warning(f"Could not parse version '{version}' in any recognized format: {error.message}")
+        # Instead of returning an error, we'll continue with a default version tuple
+        # This allows us to at least return the latest version even if we can't do component-based comparisons
+        version_tuple = (0, 0, 0)  # Default to all zeros
+    else:
+        logger.info(f"Parsed version '{version}' as tuple {version_tuple}")
     
     # Parse the dependency
     group_id, artifact_id = parse_dependency(dependency)

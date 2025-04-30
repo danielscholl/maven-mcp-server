@@ -14,10 +14,10 @@ logger = logging.getLogger("maven-check")
 
 def parse_semver(version: str) -> Tuple[bool, Optional[Tuple[int, int, int]], Optional[MavenError]]:
     """
-    Parse a semantic version string into its components.
+    Parse a version string into its components.
     
     Args:
-        version: The semantic version string (MAJOR.MINOR.PATCH).
+        version: The version string, preferably in semantic version format (MAJOR.MINOR.PATCH).
         
     Returns:
         A tuple of (is_valid, version_tuple, error) where:
@@ -35,22 +35,66 @@ def parse_semver(version: str) -> Tuple[bool, Optional[Tuple[int, int, int]], Op
     semver_pattern = r'^(\d+)\.(\d+)\.(\d+)(?:-[\w.-]+)?(?:\+[\w.-]+)?$'
     match = re.match(semver_pattern, version)
     
-    if not match:
-        return False, None, MavenError(
-            ErrorCode.INVALID_INPUT_FORMAT,
-            f"Version '{version}' does not match the required semantic versioning format 'MAJOR.MINOR.PATCH'."
-        )
+    if match:
+        try:
+            major = int(match.group(1))
+            minor = int(match.group(2))
+            patch = int(match.group(3))
+            return True, (major, minor, patch), None
+        except Exception as e:
+            return False, None, MavenError(
+                ErrorCode.INTERNAL_SERVER_ERROR,
+                f"Failed to parse version components: {str(e)}"
+            )
     
-    try:
-        major = int(match.group(1))
-        minor = int(match.group(2))
-        patch = int(match.group(3))
-        return True, (major, minor, patch), None
-    except Exception as e:
-        return False, None, MavenError(
-            ErrorCode.INTERNAL_SERVER_ERROR,
-            f"Failed to parse version components: {str(e)}"
-        )
+    # Handle non-semver formats
+    
+    # Calendar-based versions (YYYYMMDD) like 20231013
+    if version.isdigit():
+        # For calendar versions, use year as major, month as minor, day as patch
+        if len(version) >= 8:
+            try:
+                major = int(version[:4])    # Year (e.g., 2023)
+                minor = int(version[4:6])   # Month (e.g., 10)
+                patch = int(version[6:8])   # Day (e.g., 13)
+                logger.info(f"Parsed calendar version {version} as {major}.{minor}.{patch}")
+                return True, (major, minor, patch), None
+            except Exception:
+                pass
+        # For other numeric versions, use the number as major, 0 for minor and patch
+        try:
+            major = int(version)
+            minor = 0
+            patch = 0
+            logger.info(f"Parsed numeric version {version} as {major}.{minor}.{patch}")
+            return True, (major, minor, patch), None
+        except Exception:
+            pass
+    
+    # Other non-standard formats - handle as best effort
+    # For versions like "1.0", "1", etc.
+    parts = version.split('.')
+    if parts:
+        try:
+            # Start with zeros for each component
+            major = minor = patch = 0
+            # Fill in with actual values where available
+            if len(parts) > 0:
+                major = int(parts[0])
+            if len(parts) > 1:
+                minor = int(parts[1])
+            if len(parts) > 2:
+                patch = int(parts[2])
+            logger.info(f"Parsed partial version {version} as {major}.{minor}.{patch}")
+            return True, (major, minor, patch), None
+        except Exception:
+            pass
+    
+    # If all parsing attempts fail, return an error
+    return False, None, MavenError(
+        ErrorCode.INVALID_INPUT_FORMAT,
+        f"Version '{version}' could not be parsed in any recognized format."
+    )
 
 def validate_target_component(target_component: str) -> Tuple[bool, Optional[MavenError]]:
     """
@@ -147,7 +191,9 @@ def get_latest_component_version(
             if "-" in version_str and any(x in version_str.lower() for x in ["alpha", "beta", "rc", "snapshot", "pre"]):
                 continue
                 
-            # Try to parse the version as semver
+            # Try to parse the version in various formats
+            
+            # First try standard semver format
             match = re.match(r'^(\d+)\.(\d+)\.(\d+)', version_str)
             if match:
                 try:
@@ -155,15 +201,53 @@ def get_latest_component_version(
                     v_minor = int(match.group(2))
                     v_patch = int(match.group(3))
                     versions.append((v_major, v_minor, v_patch, version_str))
+                    continue  # Successfully parsed, move to next version
                 except ValueError:
-                    # Skip versions that can't be properly parsed
-                    continue
+                    pass  # Continue to next parsing attempt
+            
+            # Try calendar format (YYYYMMDD)
+            if version_str.isdigit() and len(version_str) >= 8:
+                try:
+                    v_major = int(version_str[:4])   # Year
+                    v_minor = int(version_str[4:6])  # Month
+                    v_patch = int(version_str[6:8])  # Day
+                    versions.append((v_major, v_minor, v_patch, version_str))
+                    continue  # Successfully parsed, move to next version
+                except ValueError:
+                    pass  # Continue to next parsing attempt
+            
+            # Try simple numeric format (treat as major version)
+            if version_str.isdigit():
+                try:
+                    v_major = int(version_str)
+                    versions.append((v_major, 0, 0, version_str))
+                    continue  # Successfully parsed, move to next version
+                except ValueError:
+                    pass  # Continue to next parsing attempt
+            
+            # Try partial semver (like "1.0" or just "1")
+            parts = version_str.split('.')
+            if parts:
+                try:
+                    # Start with zeros
+                    v_major = v_minor = v_patch = 0
+                    # Fill in with actual values where available
+                    if len(parts) > 0:
+                        v_major = int(parts[0])
+                    if len(parts) > 1:
+                        v_minor = int(parts[1])
+                    if len(parts) > 2:
+                        v_patch = int(parts[2])
+                    versions.append((v_major, v_minor, v_patch, version_str))
+                    continue  # Successfully parsed, move to next version
+                except ValueError:
+                    pass  # Skip this version
         
         if not versions:
             return {
                 "status": "error",
                 "error": {
-                    "message": f"No valid semantic versions found for {group_id}:{artifact_id} in Maven Central"
+                    "message": f"No valid versions found for {group_id}:{artifact_id} in Maven Central"
                 }
             }
         
@@ -177,9 +261,22 @@ def get_latest_component_version(
         elif target_component == "minor":
             # Find the highest minor version within the given major version
             filtered_versions = [v for v in versions if v[0] == major]
+            # For non-semver versions like calendar dates, we might not find exact major matches
+            if not filtered_versions and versions:
+                # If no exact major matches, just use all versions
+                filtered_versions = versions
         elif target_component == "patch":
             # Find the highest patch version within the given major.minor version
             filtered_versions = [v for v in versions if v[0] == major and v[1] == minor]
+            # For non-semver versions, we might not find exact major.minor matches
+            if not filtered_versions and versions:
+                # Try to find versions with just the major match
+                major_filtered = [v for v in versions if v[0] == major]
+                if major_filtered:
+                    filtered_versions = major_filtered
+                else:
+                    # If no matches at all, just use all versions
+                    filtered_versions = versions
         
         if not filtered_versions:
             return {
@@ -225,10 +322,12 @@ def find_maven_latest_component_version(
 ) -> Dict[str, Any]:
     """
     Find the latest version of a Maven dependency based on the target component.
+    Supports both standard semver (MAJOR.MINOR.PATCH) and non-semver formats (like calendar dates 20231013).
     
     Args:
         dependency: The dependency in the format 'groupId:artifactId'.
-        version: The version in semantic version format (MAJOR.MINOR.PATCH).
+        version: The version string. Preferably in semantic version format (MAJOR.MINOR.PATCH),
+                but other formats like dates (20231013) are also supported.
         target_component: The component to find the latest version for (major, minor, or patch).
         packaging: The packaging type, defaults to 'jar'.
         classifier: The classifier, if any.
@@ -252,18 +351,24 @@ def find_maven_latest_component_version(
         logger.error(f"Invalid target component: {error.message if error else 'Unknown error'}")
         return create_error_response(tool_name, error)
     
-    # Parse the version
+    # Parse the version - now handles non-semver formats
     is_valid, version_tuple, error = parse_semver(version)
     if not is_valid:
-        logger.error(f"Invalid semantic version: {error.message if error else 'Unknown error'}")
-        return create_error_response(tool_name, error)
+        logger.warning(f"Could not parse version '{version}' in any recognized format: {error.message}")
+        # Instead of returning an error, we'll continue with a default version tuple
+        # This allows us to at least return the latest version even if we can't do component-based comparisons
+        version_tuple = (0, 0, 0)  # Default to all zeros
+    else:
+        logger.info(f"Parsed version '{version}' as tuple {version_tuple}")
     
     # Parse the dependency
     group_id, artifact_id = parse_dependency(dependency)
     logger.info(f"Parsed dependency: group_id={group_id}, artifact_id={artifact_id}")
     
-    # Auto-detect packaging type for -dependencies artifacts
-    actual_packaging = "pom" if artifact_id.endswith("-dependencies") else packaging
+    # Auto-detect packaging type for BOM and dependencies artifacts
+    actual_packaging = packaging
+    if artifact_id.endswith("-dependencies") or artifact_id.endswith("-bom"):
+        actual_packaging = "pom"
     logger.info(f"Using packaging type: {actual_packaging}")
     
     # Get the latest version based on the target component
