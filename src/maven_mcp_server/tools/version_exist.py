@@ -6,10 +6,10 @@ This tool returns the latest version of a Maven dependency.
 import logging
 import re
 import requests
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 from maven_mcp_server.shared.data_types import MavenError, ErrorCode, create_success_response, create_error_response
-from maven_mcp_server.shared.utils import validate_dependency_format, parse_dependency, query_maven_central
+from maven_mcp_server.shared.utils import validate_dependency_format, parse_dependency, query_maven_central, check_direct_repository_access
 
 logger = logging.getLogger("maven-check")
 
@@ -28,8 +28,8 @@ def get_latest_version(group_id: str, artifact_id: str, packaging: str = "jar",
         Dict containing the latest version or error information
     """
     try:
-        # For BOM artifacts, use a more direct search approach with core=gav
-        if artifact_id.endswith("-bom"):
+        # For BOM or dependencies artifacts, use a more direct search approach with core=gav
+        if artifact_id.endswith("-bom") or artifact_id.endswith("-dependencies"):
             # Use gav core for proper search
             params = {
                 "q": f"g:{group_id} AND a:{artifact_id}",
@@ -106,6 +106,31 @@ def get_latest_version(group_id: str, artifact_id: str, packaging: str = "jar",
         
         docs = response_data.get("response", {}).get("docs", [])
         if not docs:
+            # Search API failed, try direct repository access
+            logger.info(f"Search API found no results for {group_id}:{artifact_id}, trying direct repository access...")
+            exists, versions, error = check_direct_repository_access(group_id, artifact_id, None, packaging)
+            
+            if error:
+                logger.error(f"Error accessing Maven repository directly: {error.message}")
+                return {
+                    "status": "error",
+                    "error": {
+                        "message": error.message
+                    }
+                }
+                
+            if exists and versions:
+                logger.info(f"Found {len(versions)} versions via direct repository access")
+                # Sort versions using our comparison function and get the latest
+                versions.sort(key=lambda x: [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', x)], reverse=True)
+                return {
+                    "status": "success",
+                    "result": {
+                        "latest_version": versions[0]
+                    }
+                }
+            
+            # If direct access fails too, return the original error
             return {
                 "status": "error",
                 "error": {
@@ -174,8 +199,25 @@ def get_maven_latest_version(
     group_id, artifact_id = parse_dependency(dependency)
     logger.info(f"Parsed dependency: group_id={group_id}, artifact_id={artifact_id}")
     
+    # Auto-detect packaging type for -dependencies artifacts
+    actual_packaging = "pom" if artifact_id.endswith("-dependencies") else packaging
+    logger.info(f"Using packaging type: {actual_packaging}")
+    
+    # Special handling for Spring Boot dependencies
+    is_spring_boot_deps = (group_id == "org.springframework.boot" and artifact_id == "spring-boot-dependencies")
+    
     # Get the latest version
-    result = get_latest_version(group_id, artifact_id, packaging, classifier)
+    result = get_latest_version(group_id, artifact_id, actual_packaging, classifier)
+    
+    # If Spring Boot dependencies search fails, try querying spring-boot artifact instead
+    if is_spring_boot_deps and result.get("status") == "error" and "No documents found" in result.get("error", {}).get("message", ""):
+        logger.info("Attempting fallback for Spring Boot dependencies - querying spring-boot artifact instead")
+        fallback_result = get_latest_version(group_id, "spring-boot", "jar", classifier)
+        
+        if fallback_result.get("status") == "success":
+            logger.info(f"Found latest Spring Boot version via fallback: {fallback_result.get('result', {}).get('latest_version')}")
+            # Copy the result but update the message to indicate fallback
+            result = fallback_result
     logger.info(f"get_latest_version result: {result}")
     
     # Process the result

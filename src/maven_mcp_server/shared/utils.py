@@ -9,8 +9,10 @@ from typing import Dict, Any, Tuple, Optional, List
 
 from maven_mcp_server.shared.data_types import ErrorCode, MavenError
 
-# Maven Central Search API URL
+# Maven Central Search API URLs
 MAVEN_CENTRAL_API = "https://search.maven.org/solrsearch/select"
+MAVEN_CENTRAL_REMOTE_CONTENT = "https://search.maven.org/remotecontent"
+MAVEN_CENTRAL_REPO = "https://repo1.maven.org/maven2"
 
 
 def validate_dependency_format(dependency: str) -> Tuple[bool, Optional[MavenError]]:
@@ -83,6 +85,74 @@ def query_maven_central(params: Dict[str, Any]) -> Tuple[Dict[str, Any], Optiona
         )
     except Exception as e:
         return {}, MavenError(
+            ErrorCode.INTERNAL_SERVER_ERROR,
+            f"Unexpected error: {str(e)}"
+        )
+
+
+def check_direct_repository_access(group_id: str, artifact_id: str, version: str = None, packaging: str = "pom") -> Tuple[bool, List[str], Optional[MavenError]]:
+    """
+    Check if a dependency exists by directly accessing the Maven repository.
+    This is useful for dependencies that aren't properly indexed by the search API.
+    
+    Args:
+        group_id: The Maven group ID.
+        artifact_id: The Maven artifact ID.
+        version: Optional specific version to check. If None, tries to list available versions.
+        packaging: The packaging type (default: "pom").
+        
+    Returns:
+        A tuple of (exists, versions, error) where:
+        - exists is a boolean indicating if the dependency exists
+        - versions is a list of version strings (empty if version was specified)
+        - error is None if successful or a MavenError if failed
+    """
+    # Convert groupId to path format (replace dots with slashes)
+    group_path = group_id.replace('.', '/')
+    
+    try:
+        if version:
+            # Check if a specific version exists
+            url = f"{MAVEN_CENTRAL_REPO}/{group_path}/{artifact_id}/{version}/{artifact_id}-{version}.{packaging}"
+            response = requests.head(url)
+            return response.status_code == 200, [], None
+        else:
+            # Try to get metadata to find versions
+            metadata_url = f"{MAVEN_CENTRAL_REPO}/{group_path}/{artifact_id}/maven-metadata.xml"
+            response = requests.get(metadata_url)
+            
+            if response.status_code == 200:
+                # Extract versions from metadata XML
+                # This is a simple extraction and could be improved with proper XML parsing
+                versions = []
+                xml_content = response.text
+                
+                # Simple pattern matching for version tags
+                import re
+                version_matches = re.findall(r'<version>(.*?)</version>', xml_content)
+                if version_matches:
+                    versions = version_matches
+                    
+                # Simple pattern to extract latest version if available
+                latest_match = re.search(r'<latest>(.*?)</latest>', xml_content)
+                if latest_match:
+                    # Ensure the latest version is first in the list
+                    latest = latest_match.group(1)
+                    if latest in versions:
+                        versions.remove(latest)
+                    versions.insert(0, latest)
+                
+                return True, versions, None
+            else:
+                return False, [], None
+                
+    except requests.exceptions.RequestException as e:
+        return False, [], MavenError(
+            ErrorCode.MAVEN_API_ERROR,
+            f"Error accessing Maven Central Repository: {str(e)}"
+        )
+    except Exception as e:
+        return False, [], MavenError(
             ErrorCode.INTERNAL_SERVER_ERROR,
             f"Unexpected error: {str(e)}"
         )

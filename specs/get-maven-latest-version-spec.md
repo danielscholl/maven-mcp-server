@@ -17,10 +17,13 @@
   - Sort and filter results properly (ignoring snapshots unless specifically requested)
   - Return the latest version as a string
 - Handle packaging types and classifiers correctly
+- Automatically detect POM dependencies (artifacts with -bom or -dependencies suffix)
+- Provide direct repository access fallback for dependencies not properly indexed by Maven search API
+- Special handling for specific library patterns like Spring Boot dependencies
 
 ### Input Rules
 - `dependency` **MUST** match `groupId:artifactId` (no embedded version)
-- `packaging` is optional, defaults to "jar"
+- `packaging` is optional, defaults to "jar" (automatically uses "pom" for dependencies with -bom or -dependencies suffix)
 - `classifier` is optional, can be null or a valid classifier string
 
 ### Testing Requirements

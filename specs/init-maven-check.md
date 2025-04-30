@@ -27,6 +27,9 @@
 - Implement proper semantic versioning comparison for latest version detection
 - Error handling is mandatory - every failure should return a well-formed MCP error object with a code and human-readable message
 - Special handling for BOM artifacts
+- Automatic detection of POM dependencies (artifacts with -bom or -dependencies suffix)
+- Provide direct repository access fallback for dependencies not properly indexed by Maven search API
+- Special handling for specific library patterns like Spring Boot dependencies
 
 ## Tools to Expose
 

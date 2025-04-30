@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from maven_mcp_server.shared.data_types import MavenError, ErrorCode, create_success_response, create_error_response
-from maven_mcp_server.shared.utils import validate_dependency_format, parse_dependency, query_maven_central
+from maven_mcp_server.shared.utils import validate_dependency_format, parse_dependency, query_maven_central, check_direct_repository_access
 from maven_mcp_server.tools.version_exist import get_latest_version
 
 logger = logging.getLogger("maven-check")
@@ -65,7 +65,38 @@ def check_version_exists(group_id: str, artifact_id: str, version: str, packagin
         num_found = response.get("numFound", 0)
         
         if num_found == 0:
-            # Check if the dependency exists at all
+            # Try direct repository access first
+            logger.info(f"Search API found no results for {group_id}:{artifact_id}:{version}, trying direct repository access...")
+            exists, _, error = check_direct_repository_access(group_id, artifact_id, version, packaging)
+            
+            if error:
+                logger.error(f"Error accessing Maven repository directly: {error.message}")
+            elif exists:
+                logger.info(f"Found version {version} via direct repository access")
+                return {
+                    "status": "success",
+                    "result": {
+                        "exists": True
+                    }
+                }
+            
+            # Special handling for Spring Boot dependencies
+            is_spring_boot_deps = (group_id == "org.springframework.boot" and artifact_id == "spring-boot-dependencies")
+            if is_spring_boot_deps:
+                logger.info(f"Attempting fallback for Spring Boot dependencies - checking if spring-boot:{version} exists")
+                fallback_exists, _, fallback_error = check_direct_repository_access(group_id, "spring-boot", version, "jar")
+                if fallback_error:
+                    logger.error(f"Error in fallback check: {fallback_error.message}")
+                elif fallback_exists:
+                    logger.info(f"Spring Boot version {version} exists via fallback check")
+                    return {
+                        "status": "success",
+                        "result": {
+                            "exists": True
+                        }
+                    }
+            
+            # Check if the dependency exists at all (for better error messaging)
             result = get_latest_version(group_id, artifact_id, packaging, classifier)
             
             if result.get("status") == "error":
@@ -124,8 +155,24 @@ def check_maven_version_exists(
     group_id, artifact_id = parse_dependency(dependency)
     logger.info(f"Parsed dependency: group_id={group_id}, artifact_id={artifact_id}")
     
+    # Auto-detect packaging type for -dependencies artifacts
+    actual_packaging = "pom" if artifact_id.endswith("-dependencies") else packaging
+    logger.info(f"Using packaging type: {actual_packaging}")
+    
+    # Special handling for Spring Boot dependencies
+    is_spring_boot_deps = (group_id == "org.springframework.boot" and artifact_id == "spring-boot-dependencies")
+    
     # Check if the version exists
-    result = check_version_exists(group_id, artifact_id, version, packaging, classifier)
+    result = check_version_exists(group_id, artifact_id, version, actual_packaging, classifier)
+    
+    # If Spring Boot dependencies search fails, try with spring-boot artifact instead
+    if is_spring_boot_deps and result.get("status") == "error" and "No documents found" in result.get("error", {}).get("message", ""):
+        logger.info("Attempting fallback for Spring Boot dependencies check - checking spring-boot artifact instead")
+        fallback_result = check_version_exists(group_id, "spring-boot", version, "jar", classifier)
+        
+        if fallback_result.get("status") == "success":
+            logger.info(f"Spring Boot version check succeeded via fallback: {fallback_result.get('result', {}).get('exists')}")
+            result = fallback_result
     logger.info(f"check_version_exists result: {result}")
     
     # Process the result

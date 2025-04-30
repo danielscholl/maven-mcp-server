@@ -7,6 +7,7 @@ A lightweight MCP server that lets Large Language Models query Maven Central for
 - Find the latest version of any Maven dependency (library)
 - Check if a specific version of a dependency exists
 - Support for packaging types (jar, war, pom, etc.)
+- Automatic detection of POM dependencies (artifacts with -bom or -dependencies suffix)
 - Support for classifiers
 - Proper semantic versioning comparisons
 - Connection via Model Context Protocol (MCP)
@@ -65,13 +66,19 @@ Gets the latest version of a Maven dependency.
 
 **Parameters:**
 - `dependency` (required): The dependency in the format 'groupId:artifactId'
-- `packaging` (optional): The packaging type, defaults to 'jar'
+- `packaging` (optional): The packaging type, defaults to 'jar' (automatically uses 'pom' for dependencies with -bom or -dependencies suffix)
 - `classifier` (optional): The classifier, if any
 
-**Example:**
+**Examples:**
 ```json
 {
   "dependency": "org.apache.commons:commons-lang3"
+}
+```
+
+```json
+{
+  "dependency": "org.springframework.boot:spring-boot-dependencies"
 }
 ```
 
@@ -84,14 +91,21 @@ Checks if a specific version of a Maven dependency exists.
 **Parameters:**
 - `dependency` (required): The dependency in the format 'groupId:artifactId'
 - `version` (required): The version to check
-- `packaging` (optional): The packaging type, defaults to 'jar'
+- `packaging` (optional): The packaging type, defaults to 'jar' (automatically uses 'pom' for dependencies with -bom or -dependencies suffix)
 - `classifier` (optional): The classifier, if any
 
-**Example:**
+**Examples:**
 ```json
 {
   "dependency": "org.apache.commons:commons-lang3",
   "version": "3.14.0"
+}
+```
+
+```json
+{
+  "dependency": "org.springframework.boot:spring-boot-dependencies",
+  "version": "3.2.0"
 }
 ```
 
@@ -105,14 +119,22 @@ Gets the latest version of a Maven dependency based on semantic versioning compo
 - `dependency` (required): The dependency in the format 'groupId:artifactId'
 - `version` (required): The version in semantic version format (MAJOR.MINOR.PATCH)
 - `target_component` (required): The component to find the latest version for, one of: "major", "minor", "patch"
-- `packaging` (optional): The packaging type, defaults to 'jar'
+- `packaging` (optional): The packaging type, defaults to 'jar' (automatically uses 'pom' for dependencies with -bom or -dependencies suffix)
 - `classifier` (optional): The classifier, if any
 
-**Example:**
+**Examples:**
 ```json
 {
   "dependency": "org.apache.commons:commons-lang3",
   "version": "3.12.0",
+  "target_component": "minor"
+}
+```
+
+```json
+{
+  "dependency": "org.springframework.boot:spring-boot-dependencies",
+  "version": "3.1.0",
   "target_component": "minor"
 }
 ```
@@ -131,11 +153,14 @@ The server works by:
 
 1. Querying the Maven Central Repository Search API
 2. Parsing and validating dependency formats
-3. For latest version queries:
+3. Automatically detecting POM dependencies:
+   - Identifies artifacts with "-bom" or "-dependencies" suffix
+   - Uses "pom" packaging type for these artifacts
+4. For latest version queries:
    - Fetches all versions of the artifact
    - Sorts them using proper semantic versioning rules
    - Returns the most recent version
-4. For version existence checks:
+5. For version existence checks:
    - Directly queries Maven Central for the specific version
    - Returns whether it exists
 
@@ -167,7 +192,13 @@ Once the server is set up and Claude Code is connected, you can use the tools li
    Does version 3.14.0 of org.apache.commons:commons-lang3 exist?
    ```
 
-3. 2. **Get latest**:
+3. **Get latest patch version**:
    ```
    I'm using version 2.0.2 of org.springdoc:springdoc-openapi-starter-webmvc-ui what is the latest patch?
    ```
+   
+4. **Working with BOM and POM dependencies**:
+   ```
+   What is the latest version of org.springframework.boot:spring-boot-dependencies?
+   ```
+   The server automatically detects dependencies with "-dependencies" or "-bom" suffix and uses POM packaging type.

@@ -262,9 +262,13 @@ def find_maven_latest_component_version(
     group_id, artifact_id = parse_dependency(dependency)
     logger.info(f"Parsed dependency: group_id={group_id}, artifact_id={artifact_id}")
     
+    # Auto-detect packaging type for -dependencies artifacts
+    actual_packaging = "pom" if artifact_id.endswith("-dependencies") else packaging
+    logger.info(f"Using packaging type: {actual_packaging}")
+    
     # Get the latest version based on the target component
     result = get_latest_component_version(
-        group_id, artifact_id, version_tuple, target_component, packaging, classifier
+        group_id, artifact_id, version_tuple, target_component, actual_packaging, classifier
     )
     logger.info(f"get_latest_component_version result: {result}")
     

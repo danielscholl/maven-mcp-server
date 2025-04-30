@@ -17,11 +17,14 @@
   - Properly handle package types and classifiers in the query
   - Return a boolean indicating existence (true/false)
 - Optimize API calls for direct version checking when possible
+- Automatically detect POM dependencies (artifacts with -bom or -dependencies suffix)
+- Provide direct repository access fallback for dependencies not properly indexed by Maven search API
+- Special handling for specific library patterns like Spring Boot dependencies
 
 ### Input Rules
 - `dependency` **MUST** match `groupId:artifactId` (no embedded version)
 - `version` is required and must be a valid version string
-- `packaging` is optional, defaults to "jar"
+- `packaging` is optional, defaults to "jar" (automatically uses "pom" for dependencies with -bom or -dependencies suffix)
 - `classifier` is optional, can be null or a valid classifier string
 
 ### Testing Requirements
