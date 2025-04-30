@@ -10,6 +10,7 @@ A lightweight MCP server that lets Large Language Models query Maven Central for
 - Automatic detection of POM dependencies (artifacts with -bom or -dependencies suffix)
 - Support for classifiers
 - Proper semantic versioning comparisons
+- Batch processing for multiple dependencies in a single request
 - Connection via Model Context Protocol (MCP)
 
 ## Installation
@@ -58,7 +59,7 @@ uv run maven-check --debug
 
 ## Tools
 
-This MCP server provides four tools:
+This MCP server provides five tools:
 
 ### 1. get_maven_latest_version
 
@@ -181,6 +182,77 @@ Gets the latest versions for all semantic versioning components (major, minor, p
 }
 ```
 
+### 5. batch_maven_versions_check
+
+Checks the latest versions for multiple Maven dependencies in a single batch request, reducing the number of API calls when working with projects containing many dependencies.
+
+**Parameters:**
+- `dependencies` (required): List of dependency objects to check, each containing:
+  - `dependency` (required): The dependency in the format 'groupId:artifactId'
+  - `version` (required): The version in any supported format
+  - `packaging` (optional): The packaging type, defaults to 'jar' (automatically uses 'pom' for dependencies with -bom or -dependencies suffix)
+  - `classifier` (optional): The classifier, if any
+
+**Example:**
+```json
+{
+  "dependencies": [
+    {
+      "dependency": "org.apache.commons:commons-lang3",
+      "version": "3.12.0" 
+    },
+    {
+      "dependency": "org.springframework.boot:spring-boot-dependencies", 
+      "version": "3.1.0"
+    },
+    {
+      "dependency": "org.json:json",
+      "version": "20231013"
+    }
+  ]
+}
+```
+
+**Returns:** A JSON object containing a summary and results for each dependency:
+```json
+{
+  "summary": {
+    "total": 3,
+    "success": 3,
+    "failed": 0
+  },
+  "dependencies": [
+    {
+      "dependency": "org.apache.commons:commons-lang3",
+      "status": "success",
+      "versions": {
+        "latest_major_version": "3.14.0",
+        "latest_minor_version": "3.12.0",
+        "latest_patch_version": "3.12.0"
+      }
+    },
+    {
+      "dependency": "org.springframework.boot:spring-boot-dependencies",
+      "status": "success",
+      "versions": {
+        "latest_major_version": "3.2.0",
+        "latest_minor_version": "3.1.5",
+        "latest_patch_version": "3.1.0"
+      }
+    },
+    {
+      "dependency": "org.json:json",
+      "status": "success",
+      "versions": {
+        "latest_major_version": "20240303",
+        "latest_minor_version": "20240303",
+        "latest_patch_version": "20240303"
+      }
+    }
+  ]
+}
+```
+
 ## How It Works
 
 The server works by:
@@ -197,6 +269,10 @@ The server works by:
 5. For version existence checks:
    - Directly queries Maven Central for the specific version
    - Returns whether it exists
+6. For batch version checks:
+   - Processes multiple dependency requests in a single call
+   - Returns detailed results for each dependency with success/error status
+   - Provides a summary with counts of successful and failed requests
 
 ## Development
 
@@ -205,11 +281,6 @@ The server works by:
 Run all tests:
 ```bash
 uv run pytest
-```
-
-Run specific test:
-```bash
-uv run pytest src/maven_mcp_server/tests/tools/test_version_exist.py
 ```
 
 ## Using with Claude
@@ -239,8 +310,15 @@ Once the server is set up and Claude Code is connected, you can use the tools li
 
 5. **Get all latest versions in one call**:
    ```
-   I'm using version 3.1.0 of org.springframework.boot:spring-boot-dependencies.
-   I'm also using org.json:json with the version 20231013.
-   What are the lastest versions could I upgrade to?
+   Check latest versions org.springframework.boot:spring-boot-dependencies (currently using 3.1.0)
    ```
    This returns the latest major, minor, and patch versions in a single call, making it efficient for understanding upgrade options.
+
+6. **Check multiple dependencies at once with batch processing**:
+   ```
+   I need to check the latest versions for:
+   - org.apache.commons:commons-lang3 (currently using 3.12.0)
+   - org.springframework.boot:spring-boot-dependencies (currently using 3.1.0)
+   - org.json:json (currently using 20231013)
+   ```
+   The batch processing tool checks all dependencies in one request, improving efficiency for projects with multiple dependencies.

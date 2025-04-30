@@ -16,6 +16,7 @@ from maven_mcp_server.tools.version_exist import get_maven_latest_version
 from maven_mcp_server.tools.check_version import check_maven_version_exists
 from maven_mcp_server.tools.latest_by_semver import find_maven_latest_component_version
 from maven_mcp_server.tools.all_latest_versions import get_maven_all_latest_versions
+from maven_mcp_server.tools.batch_versions import batch_maven_versions_check
 from maven_mcp_server.shared.data_types import ErrorCode, MavenError, create_error_response
 
 
@@ -150,6 +151,44 @@ async def serve_async() -> None:
                     },
                     "required": ["dependency", "version"]
                 }
+            ),
+            Tool(
+                name="batch_maven_versions_check",
+                description="Check latest versions for multiple Maven dependencies in a single batch request",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "dependencies": {
+                            "type": "array",
+                            "description": "List of dependency objects to check",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "dependency": {
+                                        "type": "string",
+                                        "description": "The dependency in the format 'groupId:artifactId'."
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "description": "The version in any supported format."
+                                    },
+                                    "packaging": {
+                                        "type": "string",
+                                        "description": "The packaging type, defaults to 'jar'.",
+                                        "default": "jar"
+                                    },
+                                    "classifier": {
+                                        "type": ["string", "null"],
+                                        "description": "The classifier, if any.",
+                                        "default": None
+                                    }
+                                },
+                                "required": ["dependency", "version"]
+                            }
+                        }
+                    },
+                    "required": ["dependencies"]
+                }
             )
         ]
     
@@ -245,6 +284,69 @@ async def serve_async() -> None:
                 else:
                     error_msg = result.get("error", {}).get("message", "Unknown error")
                     logger.error(f"Error in get_maven_all_latest_versions: {error_msg}")
+                    
+                    # Return error as TextContent instead of raising exception
+                    return [TextContent(
+                        type="text",
+                        text=f"Error: {error_msg}"
+                    )]
+            elif name == "batch_maven_versions_check":
+                result = batch_maven_versions_check(**arguments)
+                if result.get("status") in ["success", "partial_success"]:
+                    batch_results = result.get("result", {})
+                    summary = batch_results.get("summary", {})
+                    dependency_results = batch_results.get("dependencies", [])
+                    
+                    logger.info(f"Batch processing complete. Total: {summary.get('total', 0)}, "
+                               f"Success: {summary.get('success', 0)}, Failed: {summary.get('failed', 0)}")
+                    
+                    # Format the response as a nicely structured JSON string
+                    formatted_response = "{\n"
+                    formatted_response += f'  "summary": {{\n'
+                    formatted_response += f'    "total": {summary.get("total", 0)},\n'
+                    formatted_response += f'    "success": {summary.get("success", 0)},\n'
+                    formatted_response += f'    "failed": {summary.get("failed", 0)}\n'
+                    formatted_response += f'  }},\n'
+                    formatted_response += f'  "dependencies": [\n'
+                    
+                    for i, dep_result in enumerate(dependency_results):
+                        dependency = dep_result.get("dependency", "unknown")
+                        status = dep_result.get("status", "unknown")
+                        
+                        formatted_response += f'    {{\n'
+                        formatted_response += f'      "dependency": "{dependency}",\n'
+                        formatted_response += f'      "status": "{status}",\n'
+                        
+                        if status == "success":
+                            dep_versions = dep_result.get("result", {})
+                            formatted_response += f'      "versions": {{\n'
+                            formatted_response += f'        "latest_major_version": "{dep_versions.get("latest_major_version", "N/A")}",\n'
+                            formatted_response += f'        "latest_minor_version": "{dep_versions.get("latest_minor_version", "N/A")}",\n'
+                            formatted_response += f'        "latest_patch_version": "{dep_versions.get("latest_patch_version", "N/A")}"\n'
+                            formatted_response += f'      }}\n'
+                        else:
+                            error = dep_result.get("error", {})
+                            formatted_response += f'      "error": {{\n'
+                            formatted_response += f'        "code": "{error.get("code", "UNKNOWN_ERROR")}",\n'
+                            formatted_response += f'        "message": "{error.get("message", "Unknown error")}"\n'
+                            formatted_response += f'      }}\n'
+                        
+                        if i < len(dependency_results) - 1:
+                            formatted_response += f'    }},\n'
+                        else:
+                            formatted_response += f'    }}\n'
+                    
+                    formatted_response += f'  ]\n'
+                    formatted_response += f'}}'
+                    
+                    # Format as expected by MCP server - return TextContent
+                    return [TextContent(
+                        type="text",
+                        text=formatted_response
+                    )]
+                else:
+                    error_msg = result.get("error", {}).get("message", "Unknown error")
+                    logger.error(f"Error in batch_maven_versions_check: {error_msg}")
                     
                     # Return error as TextContent instead of raising exception
                     return [TextContent(

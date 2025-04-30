@@ -12,12 +12,13 @@ class ErrorCode(str, Enum):
     Error codes for the Maven MCP Server.
     Used to indicate the type of error that occurred during a request.
     """
-    INVALID_INPUT_FORMAT = "INVALID_INPUT_FORMAT"  # Malformed dependency string
+    INVALID_INPUT_FORMAT = "INVALID_INPUT_FORMAT"  # Malformed dependency string or input format
     MISSING_PARAMETER = "MISSING_PARAMETER"  # Required parameter missing
     DEPENDENCY_NOT_FOUND = "DEPENDENCY_NOT_FOUND"  # No versions found for the dependency
     VERSION_NOT_FOUND = "VERSION_NOT_FOUND"  # Version not found though dependency exists
     MAVEN_API_ERROR = "MAVEN_API_ERROR"  # Upstream Maven Central error (non‑200, network failure)
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"  # Unhandled exception inside the server
+    EMPTY_DEPENDENCIES = "EMPTY_DEPENDENCIES"  # Empty dependencies array provided in batch request
 
 
 class MavenError:
@@ -82,4 +83,22 @@ def create_error_response(tool_name: str, error: MavenError) -> Dict[str, Any]:
         "tool_name": tool_name,
         "status": "error",
         "error": error.to_dict()
+    }
+
+
+def create_partial_success_response(tool_name: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create a partial success response for an MCP tool where some operations succeeded and others failed.
+
+    Args:
+        tool_name: The name of the tool.
+        result: The result with both successful and failed operations.
+
+    Returns:
+        A dictionary with the partial success response.
+    """
+    return {
+        "tool_name": tool_name,
+        "status": "partial_success",
+        "result": result
     }
